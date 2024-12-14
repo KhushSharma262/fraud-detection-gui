@@ -1,0 +1,175 @@
+import tkinter as tk
+from tkinter import messagebox
+from collections import deque, defaultdict
+import time
+import heapq
+
+# Core Logic
+user_transactions = {}
+recent_transactions = deque()
+suspicious_transactions = []
+transaction_graph = {}
+user_reports = defaultdict(set)
+fraudulent_users = set()
+reported_users = set()
+
+report_threshold = 3  # Set the threshold for marking a user as fraudulent
+
+# Functions for Fraud Detection Logic
+def add_transaction(user_id, amount, location, timestamp):
+    if user_id not in user_transactions:
+        user_transactions[user_id] = []
+    user_transactions[user_id].append({
+        'amount': amount,
+        'location': location,
+        'timestamp': timestamp
+    })
+
+def add_recent_transaction(user_id, amount, location):
+    current_time = time.time()
+    recent_transactions.append({
+        'user_id': user_id,
+        'amount': amount,
+        'location': location,
+        'timestamp': current_time
+    })
+
+    # Remove old transactions older than 24 hours
+    while recent_transactions and (current_time - recent_transactions[0]['timestamp']) > 86400:
+        recent_transactions.popleft()
+
+def is_suspicious_transaction(transaction, threshold_amount=10000, unusual_location=''):
+    if transaction['amount'] > threshold_amount:
+        return True
+    if unusual_location and transaction['location'] != unusual_location:
+        return True
+    return False
+
+def detect_anomaly(transaction, user_id):
+    history = user_transactions.get(user_id, [])
+    if history:
+        average_spent = sum([t['amount'] for t in history]) / len(history)
+        if transaction['amount'] > 2 * average_spent:
+            return True
+    return False
+
+def check_frequent_transactions_in_window(user_id):
+    count = sum(1 for t in recent_transactions if t['user_id'] == user_id)
+    if count > 5:  # Threshold for too many transactions in a short time
+        return True
+    return False
+
+def report_user(reporting_user_id, reported_user_id):
+    user_reports[reported_user_id].add(reporting_user_id)
+    reported_users.add(reported_user_id)
+
+    if len(user_reports[reported_user_id]) >= report_threshold:
+        fraudulent_users.add(reported_user_id)
+        return f"User {reported_user_id} has been flagged as fraudulent."
+    return f"User {reported_user_id} has been reported."
+
+def get_account_status(user_id):
+    if user_id in fraudulent_users:
+        return "Fraudulent"
+    elif user_id in reported_users:
+        return "Reported"
+    else:
+        return "Safe"
+
+def process_transaction(user_id, amount, location, receiver_id):
+    if receiver_id in fraudulent_users:
+        return "Transaction denied: Receiver is flagged as fraudulent."
+
+    current_time = time.time()
+    transaction = {
+        'user_id': user_id,
+        'amount': amount,
+        'location': location,
+        'timestamp': current_time
+    }
+
+    add_transaction(user_id, amount, location, current_time)
+    add_recent_transaction(user_id, amount, location)
+
+    if is_suspicious_transaction(transaction):
+        return "Suspicious transaction detected!"
+
+    if check_frequent_transactions_in_window(user_id):
+        return "Too many transactions in a short period."
+
+    return "Transaction successful."
+
+# GUI Implementation
+def submit_transaction():
+    user_id = entry_user_id.get()
+    receiver_id = entry_receiver_id.get()
+    try:
+        amount = float(entry_amount.get())
+    except ValueError:
+        messagebox.showerror("Invalid Input", "Please enter a valid amount.")
+        return
+
+    location = entry_location.get()
+    if not (user_id and receiver_id and location):
+        messagebox.showerror("Missing Input", "All fields are required.")
+        return
+
+    result = process_transaction(user_id, amount, location, receiver_id)
+    messagebox.showinfo("Transaction Status", result)
+
+def report_user_gui():
+    reporting_user_id = entry_reporting_user_id.get()
+    reported_user_id = entry_reported_user_id.get()
+
+    if not (reporting_user_id and reported_user_id):
+        messagebox.showerror("Missing Input", "Both fields are required.")
+        return
+
+    result = report_user(reporting_user_id, reported_user_id)
+    messagebox.showinfo("Report Status", result)
+
+# Create GUI Window
+app = tk.Tk()
+app.title("Fraud Detection System")
+app.geometry("400x500")
+
+# Labels and Inputs for Transaction Submission
+label_user_id = tk.Label(app, text="Your User ID:")
+label_user_id.pack()
+entry_user_id = tk.Entry(app)
+entry_user_id.pack()
+
+label_receiver_id = tk.Label(app, text="Receiver ID:")
+label_receiver_id.pack()
+entry_receiver_id = tk.Entry(app)
+entry_receiver_id.pack()
+
+label_amount = tk.Label(app, text="Transaction Amount:")
+label_amount.pack()
+entry_amount = tk.Entry(app)
+entry_amount.pack()
+
+label_location = tk.Label(app, text="Transaction Location:")
+label_location.pack()
+entry_location = tk.Entry(app)
+entry_location.pack()
+
+btn_submit_transaction = tk.Button(app, text="Submit Transaction", command=submit_transaction)
+btn_submit_transaction.pack(pady=10)
+
+# Labels and Inputs for Reporting Users
+label_reporting_user_id = tk.Label(app, text="Your User ID (Reporting):")
+label_reporting_user_id.pack()
+entry_reporting_user_id = tk.Entry(app)
+entry_reporting_user_id.pack()
+
+label_reported_user_id = tk.Label(app, text="Reported User ID:")
+label_reported_user_id.pack()
+entry_reported_user_id = tk.Entry(app)
+entry_reported_user_id.pack()
+
+btn_report_user = tk.Button(app, text="Report User", command=report_user_gui)
+btn_report_user.pack(pady=10)
+
+# Run the application
+app.mainloop()
